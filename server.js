@@ -1,33 +1,63 @@
 // server.js
-const express = require("express");
-const fetch = require("node-fetch"); // npm install node-fetch
+const express = require('express');
+const fetch = require('node-fetch'); // if Node >=18, you can use global fetch
 const app = express();
-const PORT = process.env.PORT || 10000;
+const port = process.env.PORT || 3000;
 
-// Allow CORS
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  next();
-});
+// === Replace with your real API keys ===
+const TWELVEDATA_API_KEY = "8e0b84d987334ac89d90957f34e712b4";
 
-app.get("/data", async (req, res) => {
+// Helper function to fetch PRU.AUX price from Twelve Data
+async function getSharePrice() {
   try {
-    // Fetch PRU.AX price from Yahoo Finance
-    const yfRes = await fetch(
-      "https://query1.finance.yahoo.com/v7/finance/quote?symbols=PRU.AX"
-    );
-    const yfData = await yfRes.json();
-    const price = yfData.quoteResponse.result[0].regularMarketPrice;
-
-    // Fetch AUD->GBP exchange rate
-    const exRes = await fetch("https://api.exchangerate.host/latest?base=AUD&symbols=GBP");
-    const exData = await exRes.json();
-    const rate = exData.rates.GBP;
-
-    res.json({ price, rate });
+    const url = `https://api.twelvedata.com/price?symbol=PRU.AUX&apikey=${TWELVEDATA_API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    if (!data.price) throw new Error("No price returned from API");
+    return parseFloat(data.price);
   } catch (err) {
+    console.error("Error fetching share price:", err.message);
+    return null;
+  }
+}
+
+// Helper function to fetch AUD→GBP exchange rate from Twelve Data
+async function getExchangeRate() {
+  try {
+    const url = `https://api.twelvedata.com/price?symbol=AUD/GBP&apikey=${TWELVEDATA_API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    if (!data.price) throw new Error("No exchange rate returned");
+    return parseFloat(data.price);
+  } catch (err) {
+    console.error("Error fetching exchange rate:", err.message);
+    return null;
+  }
+}
+
+// /data endpoint
+app.get('/data', async (req, res) => {
+  try {
+    const sharePrice = await getSharePrice();
+    const exchangeRate = await getExchangeRate();
+
+    if (sharePrice === null || exchangeRate === null) {
+      return res.status(500).json({ error: "Failed to fetch live data" });
+    }
+
+    // Enable CORS so local HTML can fetch
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    res.json({
+      sharePrice,
+      exchangeRate
+    });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
